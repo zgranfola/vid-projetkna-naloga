@@ -12,6 +12,9 @@ from PIL import Image
 import math
 import imageio
 import json
+import random
+from numpy import savez_compressed
+import os
 
 from skimage.io import imread, imshow
 from skimage.transform import resize
@@ -20,46 +23,6 @@ from skimage import exposure
 
 #da podpira "cv2.imread sem mogel dodati "python.linting.pylintArgs": ["--generate-members"] "
 
-#pisanje v datoteko
-
-def funWriteTofile():
-    print("Pisanje v file")
-
-    #primet pisanja v file
-    data = {}
-    data['people'] = []
-    data['people'].append({
-        'name': 'Scott',
-        'website': 'stackabuse.com',
-        'from': 'Nebraska'
-    })
-    data['people'].append({
-        'name': 'Larry',
-        'website': 'google.com',
-        'from': 'Michigan'
-    })
-    data['people'].append({
-        'name': 'Tim',
-        'website': 'apple.com',
-        'from': 'Alabama'
-    })
-
-    with open('data.txt', 'w') as outfile:
-        json.dump(data, outfile)
-
-#branje iz datoteke
-
-def funReadFromFile():
-    print("Branje iz fajla")
-
-    #primer branja
-    with open('data.txt') as json_file:
-        data = json.load(json_file)
-        for p in data['people']:
-            print('Name: ' + p['name'])
-            print('Website: ' + p['website'])
-            print('From: ' + p['from'])
-            print('')
 
 #funkcija za sobela
 
@@ -127,63 +90,31 @@ def funDodajUporabnik():
         
     facesGray = cv2.cvtColor(faces, cv2.COLOR_BGR2GRAY)
 
-    angles,magnitude = sobel_filters(facesGray)
-
-    #hog= cv2.HOGDescriptor()
-
-    #h = hog.compute(facesGray)
-    #print(h)
+    blur1 = cv2.GaussianBlur(facesGray,(5,5),0) #Gaussian Filtering
 
     #creating hog features 
-    cv2.imshow("test",facesGray)
-    fd, hog_image = hog(facesGray, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
+    fd, hog_image = hog(blur1, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
 
     print(fd.astype(np.float32))
 
-    cv2.imshow("neki novga",hog_image)
+    savez_compressed("simpleDB/"+str(random.randint(1,10000))+".npz", data=fd) 
+    #cv2.imshow("neki novga",hog_image)
 
-    cv2.imshow('img', img)
+    #cv2.imshow('img', img)
 
 
 
 
 
 def funNajdiUporabnik():
-    #test
-
-    filetypes = [("Izberite sliko", ".jpg .png .jpeg .jpe .tif .gif .jfif")]
-    filepath = filedialog.askopenfilename(title="Izberite sliko", filetypes=filetypes)
-
-    # Read the input image
-    img = cv2.imread(filepath)
     
-    # Convert into grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Load the cascade
-    face_cascade1 = cv2.CascadeClassifier('haarcascade_frontalface_alt2.xml')
-    
-    # Detect faces
-    faces1 = face_cascade1.detectMultiScale(gray, 1.1, 4)
-    
-    # Draw rectangle around the faces and crop the faces
-    for (x, y, w, h) in faces1:
-        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 0, 255), 2)
-        faces1 = img[y:y + h, x:x + w]
-        cv2.imshow("face",faces1)
-        
-    facesGray = cv2.cvtColor(faces1, cv2.COLOR_BGR2GRAY)
-
-    blur1 = cv2.GaussianBlur(facesGray,(5,5),0) #Gaussian Filtering
-
-    fd, hog_image = hog(blur1, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
-
     #snemanje
     cameraVideo = cv2.VideoCapture(0,cv2.CAP_DSHOW)
     if cameraVideo.isOpened == False:
         print("Neki te j**e")
 
-    while True:
+    stop=True
+    while stop:
         ret, frame = cameraVideo.read()
         if ret == True:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -198,46 +129,44 @@ def funNajdiUporabnik():
             for (x, y, w, h) in faces:
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
                 faces = frame[y:y + h, x:x + w]
-
+            
             if cv2.waitKey(1) & 0xFF == ord('s'): #s tipko q zapreme kamero
                 facesGray2= cv2.cvtColor(faces, cv2.COLOR_BGR2GRAY)
 
                 blur2 = cv2.GaussianBlur(facesGray2,(5,5),0) #Gaussian Filtering
 
                 fd1, hog_image1 = hog(blur2, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    stop=False
+                entries = os.listdir('simpleDB/')
+                for entry in entries: #get all elements in my db
+                    data=np.load("simpleDB/"+entry)#read files in Dir
+                    fd=data['data']
+                    koeficientM = 0.9 
+                    koeficientV = 1.1
 
-                #print(cv2.compareHist(hog_image, hog_image1, 0))
+                    test1 = (fd[0]+fd[10]+fd[20]+fd[25]+fd[30])/5
+                    test2 = (fd1[0]+fd1[10]+fd1[20]+fd1[25]+fd1[30])/5
 
-                koeficientM = 0.85 
-                koeficientV = 1.15
+                    sum1=0
+                    sum2=0
+                    
+                    for i in fd:
+                        sum1 = sum1 + i
+                    for i in fd1:
+                        sum2 = sum2 + i
 
-                test1 = (fd[0]+fd[10]+fd[20]+fd[25]+fd[30])/5
-                test2 = (fd1[0]+fd1[10]+fd1[20]+fd1[25]+fd1[30])/5
+                    print(sum1,sum2)
+                    print(test1,test2)
 
-                sum1=0
-                sum2=0
-      
-                for i in fd:
-                    sum1 = sum1 + i
-                for i in fd1:
-                    sum2 = sum2 + i
-
-                print(sum1,sum2)
-                print(test1,test2)
-
-                if test1*koeficientM < test2 and test2 < test1*koeficientV:
-                    print("enaki sliki")
-                else:
-                    print("bol slaba")
-                break
-
+                    if test1*koeficientM < test2 and test2 < test1*koeficientV:
+                        print("enaki sliki")
+                    else:
+                        print("bol slaba")
+                    break
             # Display the output
             cv2.imshow('Frame', frame)
-            #cv2.imshow("Slika iz kamere", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'): #s tipko q zapreme kamero
-                break
-        else:
-            break
+
 
     cameraVideo.release()
     cv2.destroyAllWindows()
