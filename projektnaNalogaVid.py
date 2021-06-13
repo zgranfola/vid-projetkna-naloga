@@ -15,17 +15,26 @@ import json
 import random
 from numpy import savez_compressed
 import os
+import keyboard
+import requests
+import webbrowser
 
 from skimage.io import imread, imshow
 from skimage.transform import resize
 from skimage.feature import hog
 from skimage import exposure
 
-#da podpira "cv2.imread sem mogel dodati "python.linting.pylintArgs": ["--generate-members"] "
+import mysql.connector
 
+# povezava na MySQL database. Ni najboljse ker hardcodamo uporabnisko in geslo ampak za zdaj je vredu.
+mydb = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="geslo",
+  database="mydb"
+)
 
 #funkcija za sobela
-
 def sobel_filters(img):
     Kx = np.array(np.mat('-1 0 1; -2 0 2; -1 0 1'))
     Ky = np.array(np.mat('-1 -2 -1; 0 0 0; 1 2 1'))
@@ -64,16 +73,15 @@ def sobel_filters(img):
 
 
 def funDodajUporabnik():
-    print("Dodajanje uproabnika")
-
+    
+    print("Dodajanje uporabnika")
     #odpre meni za izbiranje slike
     filetypes = [("Izberite sliko", ".jpg .png .jpeg .jpe .tif .gif .jfif")]
     filepath = filedialog.askopenfilename(title="Izberite sliko", filetypes=filetypes)
-
-    # Read the input image
+    # preberemo sliko
     img = cv2.imread(filepath)
-    
-    # Convert into grayscale
+
+    # pretvorimo v sivinsko
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
     # Load the cascade
@@ -87,6 +95,8 @@ def funDodajUporabnik():
         cv2.rectangle(img, (x, y), (x+w, y+h), (0, 0, 255), 2)
         faces = img[y:y + h, x:x + w]
         cv2.imshow("face",faces)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
         
     facesGray = cv2.cvtColor(faces, cv2.COLOR_BGR2GRAY)
 
@@ -94,20 +104,36 @@ def funDodajUporabnik():
 
     #creating hog features 
     fd, hog_image = hog(blur1, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
+    znacilnica = (fd[0]+fd[10]+fd[20]+fd[25]+fd[30])/5
 
-    print(fd.astype(np.float32))
+    #vpisemo podatke za db, ime in starost
+    name = input("Enter your name: ")
+    age = input("Enter your age: ")
+    username = input("Enter your username: ")
+    password = input("Enter your password: ")
+    mycursor = mydb.cursor()
 
-    savez_compressed("simpleDB/"+str(random.randint(1,10000))+".npz", data=fd) 
-    #cv2.imshow("neki novga",hog_image)
+    #sql poizvedba za vpis v database
+    sql = "INSERT INTO user (name, age, znacilnice, username, password) VALUES (%s, %s, %s, %s, %s)"
+    val = (name, age, znacilnica, username, password)
+    mycursor.execute(sql, val)
+    mydb.commit()
 
-    #cv2.imshow('img', img)
+
+    #simpleDB on visualstudiocode
+    #savez_compressed("simpleDB/"+str(random.randint(1,10000))+".npz", data=fd) 
 
 
+#funckija katera nam prebere celotno tabelo user, in nam returna vse vrednosti
+def readFromDatabase():
+    mycursor = mydb.cursor()
+    sql = "SELECT * FROM user"
+    mycursor.execute(sql)
+    return mycursor.fetchall()
 
 
 
 def funNajdiUporabnik():
-    
     #snemanje
     cameraVideo = cv2.VideoCapture(0,cv2.CAP_DSHOW)
     if cameraVideo.isOpened == False:
@@ -136,36 +162,39 @@ def funNajdiUporabnik():
                 blur2 = cv2.GaussianBlur(facesGray2,(5,5),0) #Gaussian Filtering
 
                 fd1, hog_image1 = hog(blur2, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, multichannel=False)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    stop=False
-                entries = os.listdir('simpleDB/')
-                for entry in entries: #get all elements in my db
-                    data=np.load("simpleDB/"+entry)#read files in Dir
-                    fd=data['data']
+                
+                read = readFromDatabase() #klicemo funkcijo katera nam naredi sql poizvedbo
+                print(read)
+                fd = 0.0
+                for znacilnica in read: #gremo skoz celo tabelo
+                    #print(znacilnica[3])
                     koeficientM = 0.9 
                     koeficientV = 1.1
-
-                    test1 = (fd[0]+fd[10]+fd[20]+fd[25]+fd[30])/5
+                    test1 = znacilnica[3]
                     test2 = (fd1[0]+fd1[10]+fd1[20]+fd1[25]+fd1[30])/5
-
-                    sum1=0
-                    sum2=0
-                    
-                    for i in fd:
-                        sum1 = sum1 + i
-                    for i in fd1:
-                        sum2 = sum2 + i
-
-                    print(sum1,sum2)
-                    print(test1,test2)
 
                     if test1*koeficientM < test2 and test2 < test1*koeficientV:
                         print("enaki sliki")
+                        username = znacilnica[4]
+                        password = znacilnica[5]
+                        
+                        print("Ime: " + znacilnica[1] + ", age: " + str(znacilnica[2]))
+                        #post metoda z
+                        url = 'http://localhost:3000/HomeFaceScan'
+                        #myobj = {'username', 'password'}
+                        x = requests.post(url, data = {'Uporabniško_ime': username, 'Geslo': password})
+                        chrome_path = "C://Program Files (x86)//Google//Chrome//Application/chrome.exe %s"
+                        webbrowser.get(chrome_path).open("http://localhost:3000/HomeFaceScan?"+username+"&"+password)
+                        #print(x.text)  
                     else:
                         print("bol slaba")
                     break
-            # Display the output
-            cv2.imshow('Frame', frame)
+                            
+        if keyboard.is_pressed("q"):
+            stop = False
+            
+        # Display the output
+        cv2.imshow('Frame', frame)
 
 
     cameraVideo.release()
